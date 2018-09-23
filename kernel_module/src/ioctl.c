@@ -96,10 +96,12 @@ struct task_info {
     long long int cid;
     pid_t tid;
     struct task_info *next;
+    struct task_struct *taskinlist;         // pointing to its corresponding structure in kernel run queue
 };
 
 struct container_info {
     struct task_info *head;
+    struct task_info *foot;
     struct task_info *cur;
 };
 
@@ -143,7 +145,7 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
             printk(KERN_INFO "deleting task with tid %d from container %llu",prev->tid,x);
 
             containers[x]->head = prev->next;
-            containers[x]->cur->next = containers[x]->head;
+            containers[x]->foot->next = containers[x]->head;
             kfree((void*)(prev));
         }
 
@@ -175,7 +177,7 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 int processor_container_create(struct processor_container_cmd __user *user_cmd)
 {
 
-   struct processor_container_cmd *temp;    
+    struct processor_container_cmd *temp;    
 
     temp = kmalloc(sizeof(struct processor_container_cmd), GFP_KERNEL);
 
@@ -185,7 +187,7 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
 
     struct task_info *task = kmalloc(sizeof(struct task_info), GFP_KERNEL);
 
-    struct task_struct *currenttask = current;
+    struct task_struct *currenttask = current;     // can directly us current->pid though.
 
     long long int x = temp->cid;    // check if _u64 = long long int
 
@@ -195,14 +197,16 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
 
             task->cid = x;
             task->tid = currenttask->pid;
+            task->taskinlist = currenttask;
 
             struct container_info *container = kmalloc(sizeof(struct container_info), GFP_KERNEL);
 
             containers[x] = container;
 
             containers[x]->head = task;
-            containers[x]->cur = task;
-            containers[x]->cur->next = containers[x]->head;
+            containers[x]->foot = task;
+            containers[x]->foot->next = containers[x]->head;
+            containers[x]->cur = containers[x]->head;
         }
 
     else {
@@ -210,10 +214,11 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
         printk(KERN_INFO "container already here");
         task->cid = x;
         task->tid = currenttask->pid;
+        task->taskinlist = currenttask;
 
-        containers[x]->cur->next = task;
-        containers[x]->cur = task;
-        containers[x]->cur->next = containers[x]->head;
+        containers[x]->foot->next = task;
+        containers[x]->foot = task;
+        containers[x]->foot->next = containers[x]->head;
     }
     
 
@@ -229,6 +234,31 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
 int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 {
    // printk(KERN_INFO "inside switch");
+
+    struct processor_container_cmd *temp;   
+
+    temp = kmalloc(sizeof(struct processor_container_cmd), GFP_KERNEL);
+
+    copy_from_user(temp,user_cmd, sizeof(struct processor_container_cmd));
+
+    printk(KERN_INFO "to schedule process for cid %llu", temp->cid);
+
+    long long int x = temp->cid;
+
+    //struct task_struct *currenttask = current;
+
+    pritnk(KERN_INFO "putting process %d to sleep",current->pid);
+
+    set_current_state(TASK_INTERRUPTIBLE);
+
+    printk(KERN_INFO "scheduling for process id %d in container %llu",containers[x]->cur->tid,x);
+
+    wake_up_process(containers[x]->cur->taskinlist);
+
+    containers[x]->cur = containers[x]->cur->next;
+
+    schedule();
+
     return 0;
 }
 
