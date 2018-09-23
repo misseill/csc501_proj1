@@ -107,6 +107,9 @@ struct container_info {
 
 struct container_info *containers[1000];
 
+long long int counter = 0;
+
+//struct mutex *lock;
 /**
  * Delete the task in the container.
  * 
@@ -116,6 +119,7 @@ struct container_info *containers[1000];
 
 int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 {
+   // mutex_lock(lock);
 
     struct processor_container_cmd *temp;
 
@@ -131,36 +135,49 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 
     struct task_info *del, *prev;
 
-    if(containers[x] == NULL) {
+    if(containers[x]->head == NULL) {
         printk(KERN_INFO "no such task found");
     }
 
     else {
 
-        del = containers[x]->head->next;
-        prev = containers[x]->head;
-
-        if(prev->tid == currenttask->pid){
-
-            printk(KERN_INFO "deleting task with tid %d from container %llu",prev->tid,x);
-
-            containers[x]->head = prev->next;
-            containers[x]->foot->next = containers[x]->head;
-            kfree((void*)(prev));
+        if(containers[x]->head->next == containers[x]->head) {
+            // only one task left within the container
+            kfree((void *)(containers[x]->head));
+            containers[x]->head = NULL;
         }
 
-        while(del != containers[x]->head) {
-            if(del->tid == currenttask->pid) {
-                printk(KERN_INFO "deleting task with tid %d from container %llu",del->tid,x);
-                prev->next = del->next;
-                kfree((void *)(del));
-                break;
+        else {
+
+            del = containers[x]->head->next;
+            prev = containers[x]->head;
+
+            if(prev->tid == currenttask->pid){
+
+                // Deleting the 1st task requires to change head and also last task pointing ti first
+
+                printk(KERN_INFO "deleting task with tid %d from container %llu",prev->tid,x);
+
+                containers[x]->head = prev->next;
+                containers[x]->foot->next = containers[x]->head;
+                kfree((void*)(prev));
             }
 
-            prev = prev->next;
-            del = del->next;
+            while(del != containers[x]->head) {
+                if(del->tid == currenttask->pid) {
+                    printk(KERN_INFO "deleting task with tid %d from container %llu",del->tid,x);
+                    prev->next = del->next;
+                    kfree((void *)(del));
+                    break;
+                }
+
+                prev = prev->next;
+                del = del->next;
+            }
         }
     }
+
+   // mutex_unlock(lock);
 
     return 0;
 }
@@ -176,6 +193,7 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 
 int processor_container_create(struct processor_container_cmd __user *user_cmd)
 {
+   // mutex_lock(lock);
 
     struct processor_container_cmd *temp;    
 
@@ -220,6 +238,8 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
         containers[x]->foot = task;
         containers[x]->foot->next = containers[x]->head;
     }
+
+   // mutex_unlock(lock);
     
 
     return 0;
@@ -235,6 +255,8 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 {
    // printk(KERN_INFO "inside switch");
 
+    //mutex_lock(lock);
+
     struct processor_container_cmd *temp;   
 
     temp = kmalloc(sizeof(struct processor_container_cmd), GFP_KERNEL);
@@ -247,17 +269,25 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 
     //struct task_struct *currenttask = current;
 
-    pritnk(KERN_INFO "putting process %d to sleep",current->pid);
+    printk(KERN_INFO "putting process %d to sleep",current->pid);
 
     set_current_state(TASK_INTERRUPTIBLE);
 
-    printk(KERN_INFO "scheduling for process id %d in container %llu",containers[x]->cur->tid,x);
+    printk(KERN_INFO "scheduling for process id %d in container %llu",containers[counter]->cur->tid,x);
 
-    wake_up_process(containers[x]->cur->taskinlist);
+    wake_up_process(containers[counter]->cur->taskinlist);
 
-    containers[x]->cur = containers[x]->cur->next;
+    containers[counter]->cur = containers[counter]->cur->next;
+
+    counter = counter + 1;
+
+    if(counter == 1000){
+        counter = counter % 1000;
+    }
 
     schedule();
+
+   // mutex_unlock(lock);
 
     return 0;
 }
@@ -269,6 +299,8 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 int processor_container_ioctl(struct file *filp, unsigned int cmd,
                               unsigned long arg)
 {
+   // mutex_init(lock);
+
     switch (cmd)
     {
     case PCONTAINER_IOCTL_CSWITCH:
