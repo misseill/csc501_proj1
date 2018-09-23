@@ -109,6 +109,8 @@ struct container_info *containers[1000];
 
 long long int counter = 0;
 
+DEFINE_MUTEX(lock);
+
 //struct mutex *lock;
 /**
  * Delete the task in the container.
@@ -119,7 +121,7 @@ long long int counter = 0;
 
 int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 {
-   // mutex_lock(lock);
+    mutex_lock(&lock);
 
     struct processor_container_cmd *temp;
 
@@ -177,7 +179,7 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
         }
     }
 
-   // mutex_unlock(lock);
+    mutex_unlock(&lock);
 
     return 0;
 }
@@ -193,7 +195,7 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 
 int processor_container_create(struct processor_container_cmd __user *user_cmd)
 {
-   // mutex_lock(lock);
+    mutex_lock(&lock);
 
     struct processor_container_cmd *temp;    
 
@@ -239,7 +241,7 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
         containers[x]->foot->next = containers[x]->head;
     }
 
-   // mutex_unlock(lock);
+    mutex_unlock(&lock);
     
 
     return 0;
@@ -255,7 +257,7 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 {
    // printk(KERN_INFO "inside switch");
 
-    //mutex_lock(lock);
+    mutex_lock(&lock);
 
     struct processor_container_cmd *temp;   
 
@@ -273,11 +275,13 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 
     set_current_state(TASK_INTERRUPTIBLE);
 
-    printk(KERN_INFO "scheduling for process id %d in container %llu",containers[counter]->cur->tid,x);
+    //if(counter)
 
-    wake_up_process(containers[counter]->cur->taskinlist);
+    printk(KERN_INFO "scheduling for process id %d in container %llu",containers[x]->cur->tid,x);
 
-    containers[counter]->cur = containers[counter]->cur->next;
+    wake_up_process(containers[x]->cur->taskinlist);
+
+    containers[x]->cur = containers[x]->cur->next;
 
     counter = counter + 1;
 
@@ -287,7 +291,7 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 
     schedule();
 
-   // mutex_unlock(lock);
+    mutex_unlock(&lock);
 
     return 0;
 }
@@ -299,8 +303,6 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 int processor_container_ioctl(struct file *filp, unsigned int cmd,
                               unsigned long arg)
 {
-   // mutex_init(lock);
-
     switch (cmd)
     {
     case PCONTAINER_IOCTL_CSWITCH:
@@ -313,3 +315,8 @@ int processor_container_ioctl(struct file *filp, unsigned int cmd,
         return -ENOTTY;
     }
 }
+
+
+// realloc
+
+// (void*) tasks = krealloc((void *) tasks, (sizeof(tasks)+sizeof(struct task_info)), GFP_KERNEL);
