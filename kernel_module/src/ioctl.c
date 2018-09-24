@@ -204,16 +204,6 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 int processor_container_create(struct processor_container_cmd __user *user_cmd)
 {
 
-   /* if(flag == 0) {
-
-        printk(KERN_INFO "Initializing mutex");
-
-        mutex_init(&lockproc);
-        mutex_lock(&lockproc);
-        flag = 1;
-        mutex_unlock(&lockproc);
-    }*/
-
     mutex_lock(&lockproc);
 
     struct processor_container_cmd *temp;    
@@ -278,7 +268,6 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
  */
 int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 {
-   // printk(KERN_INFO "inside switch");
 
     mutex_lock(&lockproc);
 
@@ -288,35 +277,26 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 
     copy_from_user(temp,user_cmd, sizeof(struct processor_container_cmd));
 
-    //printk(KERN_INFO "to schedule process for cid %llu", temp->cid);
-
     long long int x = temp->cid;
 
-    printk(KERN_INFO "for container, scheduling for process id %d in container %llu",containers[x]->cur->tid,x);
+    printk(KERN_INFO "scheduling next and putting process id %d in container %llu to sleep",containers[x]->cur->tid,x);
 
-    containers[x]->cur = containers[x]->cur->next;
-
-    wake_up_process(containers[x]->cur->taskinlist);
-
-
-   /* if(containers[counter] == NULL || containers[counter]->head == NULL) {
-        
-    }
+    if(containers[x]->cur == containers[x]->cur->next){
+       mutex_unlock(&lockproc); 
+    }    
 
     else {
+        
+        containers[x]->cur = containers[x]->cur->next;
+    
+        wake_up_process(containers[x]->cur->taskinlist);
 
-        printk(KERN_INFO "for other container, scheduling for process id %d in container %llu",containers[counter]->cur->tid,counter);
+        mutex_unlock(&lockproc);
 
-        containers[counter]->cur = containers[counter]->cur->next;
+        set_current_state(TASK_INTERRUPTIBLE);
 
-        wake_up_process(containers[counter]->cur->taskinlist);
-    }*/
-
-    mutex_unlock(&lockproc);
-
-    set_current_state(TASK_INTERRUPTIBLE);
-
-    schedule();
+        schedule();
+    }
 
     return 0;
 }
