@@ -111,7 +111,9 @@ long long int counter = 0;
 
 int flag = 0;
 
-struct mutex *lockproc; 
+struct mutex lockproc; 
+
+DEFINE_MUTEX(lockproc);    // by default it locks the mutex
 
 /**
  * Delete the task in the container.
@@ -122,7 +124,7 @@ struct mutex *lockproc;
 
 int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 {
-    mutex_lock(lockproc);
+    mutex_lock(&lockproc);
 
     struct processor_container_cmd *temp;
 
@@ -146,7 +148,8 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 
         if(containers[x]->head->next == containers[x]->head) {
             // only one task left within the container
-            kfree((void *)(containers[x]->head));
+            del = containers[x]->head;
+            kfree(del);
             containers[x]->head = NULL;
         }
 
@@ -163,14 +166,14 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 
                 containers[x]->head = prev->next;
                 containers[x]->foot->next = containers[x]->head;
-                kfree((void*)(prev));
+                kfree(prev);
             }
 
             while(del != containers[x]->head) {
                 if(del->tid == currenttask->pid) {
                     printk(KERN_INFO "deleting task with tid %d from container %llu",del->tid,x);
                     prev->next = del->next;
-                    kfree((void *)(del));
+                    kfree(del);
                     break;
                 }
 
@@ -180,7 +183,7 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
         }
     }
 
-    mutex_unlock(lockproc);
+    mutex_unlock(&lockproc);
 
     return 0;
 }
@@ -196,12 +199,18 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 
 int processor_container_create(struct processor_container_cmd __user *user_cmd)
 {
-    if(flag == 0) {
-        mutex_init(lockproc);
-        flag = 1;
-    }
 
-    mutex_lock(lockproc);
+   /* if(flag == 0) {
+
+        printk(KERN_INFO "Initializing mutex");
+
+        mutex_init(&lockproc);
+        mutex_lock(&lockproc);
+        flag = 1;
+        mutex_unlock(&lockproc);
+    }*/
+
+    mutex_lock(&lockproc);
 
     struct processor_container_cmd *temp;    
 
@@ -220,7 +229,7 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
     if(containers[x] == NULL) {
 
             printk(KERN_INFO "new container");
-
+            printk(KERN_INFO "creating task with id %d", currenttask->pid);
             task->cid = x;
             task->tid = currenttask->pid;
             task->taskinlist = currenttask;
@@ -238,6 +247,7 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
     else {
 
         printk(KERN_INFO "container already here");
+        printk(KERN_INFO "creating task with id %d", currenttask->pid);
         task->cid = x;
         task->tid = currenttask->pid;
         task->taskinlist = currenttask;
@@ -247,7 +257,7 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
         containers[x]->foot->next = containers[x]->head;
     }
 
-    mutex_unlock(lockproc);
+    mutex_unlock(&lockproc);
     
 
     return 0;
@@ -263,7 +273,7 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 {
    // printk(KERN_INFO "inside switch");
 
-    mutex_lock(lockproc);
+    mutex_lock(&lockproc);
 
     struct processor_container_cmd *temp;   
 
@@ -271,7 +281,7 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 
     copy_from_user(temp,user_cmd, sizeof(struct processor_container_cmd));
 
-    printk(KERN_INFO "to schedule process for cid %llu", temp->cid);
+    //printk(KERN_INFO "to schedule process for cid %llu", temp->cid);
 
     long long int x = temp->cid;
 
@@ -279,10 +289,16 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 
     printk(KERN_INFO "putting process %d to sleep",current->pid);
 
+    mutex_unlock(&lockproc);
+
     set_current_state(TASK_INTERRUPTIBLE);
 
+    schedule();
+
+    mutex_lock(&lockproc);
+
     if(containers[counter] == NULL) {
-        printk(KERN_INFO "scheduling for process id %d in container %llu",containers[x]->cur->tid,x);
+        printk(KERN_INFO "for same container, scheduling for process id %d in container %llu",containers[x]->cur->tid,x);
 
         wake_up_process(containers[x]->cur->taskinlist);
 
@@ -291,7 +307,7 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 
     else {
 
-        printk(KERN_INFO "scheduling for process id %d in container %llu",containers[counter]->cur->tid,x);
+        printk(KERN_INFO "for other container, scheduling for process id %d in container %llu",containers[counter]->cur->tid,counter);
 
         wake_up_process(containers[counter]->cur->taskinlist);
 
@@ -304,9 +320,7 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
         }
     }
 
-    schedule();
-
-    mutex_unlock(lockproc);
+    mutex_unlock(&lockproc);
 
     return 0;
 }
