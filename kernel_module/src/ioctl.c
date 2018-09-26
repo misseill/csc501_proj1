@@ -65,7 +65,7 @@
     Create
 
     Each create would either add a task to the list or resize the table to add a container
-    As hash map searches in O(1) and link list adds as well in O(1) hence new task creaate for existing
+    As hash map searches in O(1) and link list adds as well in O(1) hence new task create for existing
     container id is O(1). For new container id we first need to resize the hash table
 
     [cid1]  -> task1 -> task2 ->task3 -> task4 ->task1
@@ -73,22 +73,20 @@
     [cid3]
     [cid4]    
 
+    Here we are setting default containers to 10000, Will use krealloc to reallocate the array size to get new containers range
+
     Delete
 
-    Every delete would either remove element from the list which has to be tracked by reading the complete list for specific container id
+    Every delete would remove element from the list which has to be tracked by reading the complete list for specific container id
     hence O(n) solution.
 
 
     Switch
 
-    Switch is called every 5ms as user library uses SIG system call to ask kernel to switch *** not sure about this
+    Switch is called every 5ms as user library uses SIG system call to ask kernel to switch
 
-    Now for every switch called we move to the next resource container and the next task of the container
-    that is each container processes its task and on switch resources are utilized by next resource container for the task
-    next to the one which was being processed during the containers turn.
-
-    Locking in switch
-
+    We have a current task in each resource container running. So whenever a switch is called We schedule next task of the same resource container
+    hence we first need to identify the container.
 
 */
 
@@ -105,11 +103,11 @@ struct container_info {
     struct task_info *cur;
 };
 
-struct container_info *containers[1000];
+struct container_info *containers[10000];
 
 struct mutex lockproc; 
 
-DEFINE_MUTEX(lockproc);    // by default it locks the mutex
+DEFINE_MUTEX(lockproc);
 
 /**
  * Delete the task in the container.
@@ -144,11 +142,11 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
     else {
 
         if(containers[x]->head->next == containers[x]->head) {
+            printk(KERN_INFO "last task of container %llu",x);
             // only one task left within the container
             del = containers[x]->head;
             kfree(del);
             containers[x]->head = NULL;
-            mutex_unlock(&lockproc);
         }
 
         else {
@@ -158,13 +156,13 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 
             if(prev->tid == currenttask->pid){
 
-                // Deleting the 1st task requires to change head and also last task pointing ti first
+                // Deleting the 1st task requires to change head and also last task pointing to first
 
                 printk(KERN_INFO "deleting task with tid %d from container %llu",prev->tid,x);
 
                 containers[x]->head = prev->next;
-                containers[x]->cur = prev->next;
                 containers[x]->foot->next = containers[x]->head;
+                containers[x]->cur = prev->next;
                 kfree(prev);
             }
 
@@ -172,8 +170,8 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
                 if(del->tid == currenttask->pid) {
                     printk(KERN_INFO "deleting task with tid %d from container %llu",del->tid,x);
                     prev->next = del->next;
-                    containers[x]->cur = prev->next;
                     kfree(del);
+                    containers[x]->cur = prev->next;
                     break;
                 }
 
@@ -181,13 +179,15 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
                 del = del->next;
             }
 
-            mutex_unlock(&lockproc);
+            printk(KERN_INFO "waking up %d after delete in container %llu",containers[x]->cur->tid,x);
 
             wake_up_process(containers[x]->cur->taskinlist);
 
         }
 
     }
+
+    mutex_unlock(&lockproc);
 
     return 0;
 }
@@ -216,7 +216,7 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
 
     struct task_info *task = kmalloc(sizeof(struct task_info), GFP_KERNEL);
 
-    struct task_struct *currenttask = current;     // can directly us current->pid though.
+    struct task_struct *currenttask = current;     // can directly use current->pid though.
 
     long long int x = temp->cid;    // check if _u64 = long long int
 
@@ -278,18 +278,33 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
     copy_from_user(temp,user_cmd, sizeof(struct processor_container_cmd));
 
     long long int x = temp->cid;
+    long long int counter;
+    long long int i;
 
-    printk(KERN_INFO "scheduling next and putting process id %d in container %llu to sleep",containers[x]->cur->tid,x);
+    for(i = 0 ; i < 10000 ; i++) {
+        if(containers[i] != NULL) {
 
-    if(containers[x]->cur == containers[x]->cur->next){
-       mutex_unlock(&lockproc); 
-    }    
+            if(containers[i]->cur->tid == current->pid) {
+                counter = i;
+                break;
+            }
+        }
+    }
+
+    printk(KERN_INFO "task provided by container %llu ",counter);
+
+    if(containers[counter]->cur == containers[counter]->cur->next){
+        printk(KERN_INFO "scheduling %d and not putting process id %d in container %llu to sleep",containers[counter]->cur->next->tid,containers[counter]->cur->tid,counter);
+        mutex_unlock(&lockproc); 
+    }
 
     else {
+
+        printk(KERN_INFO "scheduling %d and putting process id %d in container %llu to sleep",containers[counter]->cur->next->tid,containers[counter]->cur->tid,counter);
         
-        containers[x]->cur = containers[x]->cur->next;
+        containers[counter]->cur = containers[counter]->cur->next;
     
-        wake_up_process(containers[x]->cur->taskinlist);
+        wake_up_process(containers[counter]->cur->taskinlist);
 
         mutex_unlock(&lockproc);
 
