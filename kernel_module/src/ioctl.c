@@ -82,9 +82,8 @@
 
     Delete
 
-    Every delete would remove element from the list which has to be tracked by reading the complete list for specific container id
-    hence O(n) solution.
-
+    Every delete would mean to delete the currently running task of the container which is maintained by cur pointer hence delete
+    is O(1).
 
     Switch
 
