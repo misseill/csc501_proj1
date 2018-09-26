@@ -57,7 +57,8 @@
     We need to implement a data structure to handle the contaianers and also the task within those containers
 
     We plan on creating a hash table with key entry as the container id and each entry having a list of tasks
-    These task would be pointing to next task within the same contaianer and last one points to first(circular linked list)
+    These task would be pointing to next task within the same container and last one points to first also each task has a pointer to its
+    previous task and first one also points to the last (doubly circular linked list).
     We create hash table for container because it has continuos id - 0,1,2... which are not random hence we do not need to 
     worry aboout creating a hash function. Whereas for task within a id we have pid(process id) which is of random form hence
     difficult to manipulate hash key also when hash table would be dynamically increasing and decreasing
@@ -69,8 +70,12 @@
     container id is O(1). For new container id we first need to resize the hash table
 
     [cid1]  -> task1 -> task2 ->task3 -> task4 ->task1
+            also task4 <- task1 <- task2 <- task3 <- task4
+
     [cid2]
+    
     [cid3]
+    
     [cid4]    
 
     Here we are setting default containers to 10000, Will use krealloc to reallocate the array size to get new containers range
@@ -94,6 +99,7 @@ struct task_info {
     long long int cid;
     pid_t tid;
     struct task_info *next;
+    struct task_info *prev;
     struct task_struct *taskinlist;         // pointing to its corresponding structure in kernel run queue
 };
 
@@ -130,61 +136,53 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
 
     long long int x = temp->cid;
 
-    struct task_struct *currenttask = current;
+    if(containers[x]->cur == containers[x]->cur->next) {    // first and the last task
+        printk(KERN_INFO "deleting the last task of container %llu",x);
+        // only one task left within the container
+        kfree(containers[x]->cur);
+        containers[x]->head = NULL;
+        containers[x]->foot = NULL;
+        containers[x]->cur = NULL;
+    }
 
-    struct task_info *del, *prev;
+    else if(containers[x]->cur == containers[x]->head) {    // first task but not the only
+        printk(KERN_INFO "deleting task, the first, with tid %d from container %llu",containers[x]->cur->tid,x);
 
-    if(containers[x]->head == NULL) {
-        printk(KERN_INFO "no such task found");
-        // it would never be here
+        containers[x]->head = containers[x]->head->next;
+        containers[x]->foot->next = containers[x]->head;
+        containers[x]->head->prev = containers[x]->foot;
+        kfree(containers[x]->cur);
+        containers[x]->cur = containers[x]->head;
+        printk("waking up the next task %d", containers[x]->cur->tid);
+        wake_up_process(containers[x]->cur->taskinlist);
+    }
+
+    else if(containers[x]->cur == containers[x]->foot) {
+        // deleting the last task
+        printk(KERN_INFO "deleting the rightmost task in the list, tid %d from container %llu",containers[x]->cur->tid,x);
+
+        containers[x]->foot = containers[x]->foot->prev;
+        containers[x]->head->prev = containers[x]->foot;
+        containers[x]->foot->next = containers[x]->head;
+        kfree(containers[x]->cur);
+        containers[x]->cur = containers[x]->head;
+        printk("waking up the next task %d", containers[x]->cur->tid);
+        wake_up_process(containers[x]->cur->taskinlist);
     }
 
     else {
+        // deleting any other task
 
-        if(containers[x]->head->next == containers[x]->head) {
-            printk(KERN_INFO "last task of container %llu",x);
-            // only one task left within the container
-            del = containers[x]->head;
-            kfree(del);
-            containers[x]->head = NULL;
-        }
+        printk(KERN_INFO "deleting the task with tid %d from container %llu",containers[x]->cur->tid,x);
 
-        else {
-
-            del = containers[x]->head->next;
-            prev = containers[x]->head;
-
-            if(prev->tid == currenttask->pid){
-
-                // Deleting the 1st task requires to change head and also last task pointing to first
-
-                printk(KERN_INFO "deleting task with tid %d from container %llu",prev->tid,x);
-
-                containers[x]->head = prev->next;
-                containers[x]->foot->next = containers[x]->head;
-                containers[x]->cur = prev->next;
-                kfree(prev);
-            }
-
-            while(del != containers[x]->head) {
-                if(del->tid == currenttask->pid) {
-                    printk(KERN_INFO "deleting task with tid %d from container %llu",del->tid,x);
-                    prev->next = del->next;
-                    kfree(del);
-                    containers[x]->cur = prev->next;
-                    break;
-                }
-
-                prev = prev->next;
-                del = del->next;
-            }
-
-            printk(KERN_INFO "waking up %d after delete in container %llu",containers[x]->cur->tid,x);
-
-            wake_up_process(containers[x]->cur->taskinlist);
-
-        }
-
+        containers[x]->cur->prev->next = containers[x]->cur->next;
+        containers[x]->cur->next->prev = containers[x]->cur->prev;
+        struct task_info *del;
+        del = containers[x]->cur;
+        containers[x]->cur = containers[x]->cur->next;
+        kfree(del);
+        printk("waking up the next task %d", containers[x]->cur->tid);
+        wake_up_process(containers[x]->cur->taskinlist);
     }
 
     mutex_unlock(&lockproc);
@@ -233,12 +231,31 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
             containers[x] = container;
 
             containers[x]->head = task;
-            containers[x]->foot = task;
+            containers[x]->foot = containers[x]->head;
             containers[x]->foot->next = containers[x]->head;
+            containers[x]->head->prev = containers[x]->foot;
             containers[x]->cur = containers[x]->head;
 
             mutex_unlock(&lockproc);
         }
+
+    else if (containers[x]->head == NULL) {
+        // this is when a container has deleted all task which were created, then next task added as 1st task
+        printk(KERN_INFO "container already here");
+        printk(KERN_INFO "new first task of container, task id %d", currenttask->pid);
+        task->cid = x;
+        task->tid = currenttask->pid;
+        task->taskinlist = currenttask;
+
+        containers[x]->head = task;
+        containers[x]->foot = containers[x]->head;
+        containers[x]->foot->next = containers[x]->head;
+        containers[x]->head->prev = containers[x]->head;
+        containers[x]->cur = containers[x]->head;
+
+        mutex_unlock(&lockproc);
+
+    }    
 
     else {
 
@@ -249,8 +266,10 @@ int processor_container_create(struct processor_container_cmd __user *user_cmd)
         task->taskinlist = currenttask;
 
         containers[x]->foot->next = task;
+        containers[x]->foot->next->prev = containers[x]->foot;
         containers[x]->foot = task;
         containers[x]->foot->next = containers[x]->head;
+        containers[x]->head->prev = containers[x]->foot;
 
         mutex_unlock(&lockproc);
         set_current_state(TASK_INTERRUPTIBLE);
@@ -271,30 +290,27 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 
     mutex_lock(&lockproc);
 
-    struct processor_container_cmd *temp;   
-
-    temp = kmalloc(sizeof(struct processor_container_cmd), GFP_KERNEL);
-
-    copy_from_user(temp,user_cmd, sizeof(struct processor_container_cmd));
-
-    long long int x = temp->cid;
     long long int counter;
     long long int i;
 
     for(i = 0 ; i < 10000 ; i++) {
         if(containers[i] != NULL) {
 
-            if(containers[i]->cur->tid == current->pid) {
-                counter = i;
-                break;
+            if(containers[i]->cur != NULL) {
+                if(containers[i]->cur->tid == current->pid) {
+                    counter = i;
+                    break;
+                }
             }
         }
     }
 
+    // there will be a counter value in the end for sure because there has to be some container running that task
+
     printk(KERN_INFO "task provided by container %llu ",counter);
 
     if(containers[counter]->cur == containers[counter]->cur->next){
-        printk(KERN_INFO "scheduling %d and not putting process id %d in container %llu to sleep",containers[counter]->cur->next->tid,containers[counter]->cur->tid,counter);
+        printk(KERN_INFO "scheduling %d the same, not putting process id %d in container %llu to sleep",containers[counter]->cur->next->tid,containers[counter]->cur->tid,counter);
         mutex_unlock(&lockproc); 
     }
 
