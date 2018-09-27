@@ -1,3 +1,4 @@
+// Project 1: Swastik Mittal, Smittal6; Erika Eill, Eleill
 //////////////////////////////////////////////////////////////////////
 //                      North Carolina State University
 //
@@ -142,6 +143,8 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
         containers[x]->head = NULL;
         containers[x]->foot = NULL;
         containers[x]->cur = NULL;
+
+        // instead can use kree to free the container rather then assigning everything to null
     }
 
     else if(containers[x]->cur == containers[x]->head) {    // first task but not the only
@@ -304,29 +307,39 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
         }
     }
 
-    // there will be a counter value in the end for sure because there has to be some container running that task
 
-    printk(KERN_INFO "task provided by container %llu ",counter);
+    if(counter == NULL) {
 
-    if(containers[counter]->cur == containers[counter]->cur->next){
-        printk(KERN_INFO "scheduling %d the same, not putting process id %d in container %llu to sleep",containers[counter]->cur->next->tid,containers[counter]->cur->tid,counter);
-        mutex_unlock(&lockproc); 
+        printk(KERN_INFO "no thread left to operate");
+
+        mutex_unlock(&lockproc);
     }
 
     else {
+        printk(KERN_INFO "task provided by container %llu ",counter);
 
-        printk(KERN_INFO "scheduling %d and putting process id %d in container %llu to sleep",containers[counter]->cur->next->tid,containers[counter]->cur->tid,counter);
+        if(containers[counter]->cur == containers[counter]->cur->next){
+            printk(KERN_INFO "scheduling %d the same, not putting process id %d in container %llu to sleep",containers[counter]->cur->next->tid,containers[counter]->cur->tid,counter);
+            mutex_unlock(&lockproc);
+        }
+
+        else {
+
+            printk(KERN_INFO "scheduling %d and putting process id %d in container %llu to sleep",containers[counter]->cur->next->tid,containers[counter]->cur->tid,counter);
+            
+            containers[counter]->cur = containers[counter]->cur->next;
         
-        containers[counter]->cur = containers[counter]->cur->next;
-    
-        wake_up_process(containers[counter]->cur->taskinlist);
+            wake_up_process(containers[counter]->cur->taskinlist);
 
-        mutex_unlock(&lockproc);
+            mutex_unlock(&lockproc);
 
-        set_current_state(TASK_INTERRUPTIBLE);
+            set_current_state(TASK_INTERRUPTIBLE);
 
-        schedule();
+            schedule();
+        }
     }
+
+    // there will be a counter value in the end for sure because there has to be some container running that task
 
     return 0;
 }
