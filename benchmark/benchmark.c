@@ -110,11 +110,11 @@ int main(int argc, char *argv[])
     pcontainer_init(devfd);
     pthread_mutex_init(&mutex, NULL);
 
-    // reset the total task for assigning the thread array.
-    total_tasks = 0;
-
     // create threads and assign tasks.
     threads = (pthread_t*) calloc(total_tasks, sizeof(pthread_t));
+
+    // reset the total task for assigning the thread array.
+    total_tasks = 0;
 
     for (i = 0; i < num_of_containers; i++)
     {
@@ -132,8 +132,12 @@ int main(int argc, char *argv[])
     }
 
     // cleanup
+    printf("freeing the task in containers\n");
     free(tasks_in_containers);
+    printf("freeing the threads\n");
     free(threads);
+    printf("freeing cid\n");
     free(cid);
+    printf("done\n");
     return 0;
 }

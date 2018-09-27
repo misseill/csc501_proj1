@@ -108,7 +108,7 @@ struct container_info {
     struct task_info *cur;
 };
 
-struct container_info *containers[10000];
+struct container_info *containers[1000];
 
 struct mutex lockproc; 
 
@@ -136,7 +136,7 @@ int processor_container_delete(struct processor_container_cmd __user *user_cmd)
     long long int x = temp->cid;
 
     if(containers[x]->cur == containers[x]->cur->next) {    // first and the last task
-        printk(KERN_INFO "deleting the last task of container %llu",x);
+        printk(KERN_INFO "deleting the last task of container and the container%llu",x);
         // only one task left within the container
         kfree(containers[x]->cur);
         containers[x]->head = NULL;
@@ -292,7 +292,7 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
     long long int counter;
     long long int i;
 
-    for(i = 0 ; i < 10000 ; i++) {
+    for(i = 0 ; i < 1000 ; i++) {
         if(containers[i] != NULL) {
 
             if(containers[i]->cur != NULL) {
