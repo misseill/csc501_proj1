@@ -292,12 +292,11 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
 
     mutex_lock(&lockproc);
 
-    long long int counter;
+    long long int counter = 999999999;      // in case switch gets called with all threads dead then counter won't be udpdated
     long long int i;
 
     for(i = 0 ; i < 1000 ; i++) {
         if(containers[i] != NULL) {
-
             if(containers[i]->cur != NULL) {
                 if(containers[i]->cur->tid == current->pid) {
                     counter = i;
@@ -308,7 +307,8 @@ int processor_container_switch(struct processor_container_cmd __user *user_cmd)
     }
 
 
-    if(counter == NULL) {
+
+    if(counter == 999999999) {          // this is to handle switch call by system call even if no task left 
 
         printk(KERN_INFO "no thread left to operate");
 
